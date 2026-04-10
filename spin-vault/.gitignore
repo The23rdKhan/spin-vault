@@ -41,3 +41,7 @@ yarn-error.*
 /android
 .env
 .env.local
+
+# IDE
+.idea/
+*.iml
