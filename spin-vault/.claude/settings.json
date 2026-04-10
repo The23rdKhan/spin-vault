@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "after-edit": ".claude/hooks/after-edit.sh"
+  }
+}
