@@ -32,7 +32,7 @@ export default function RootLayout() {
       setIsReady(true);
     }
 
-    bootApp();
+    void bootApp();
   }, []);
 
   // Show loading screen while initializing
