@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "spin-vault",
+    "name": "Spin Vault",
     "slug": "spin-vault",
     "version": "1.0.0",
     "scheme": "spinvault",
@@ -11,18 +11,47 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1a1a2e"
     },
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.spinvault.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSUserTrackingUsageDescription": "This identifier is used to measure ad performance and show relevant ads.",
+        "NSCameraUsageDescription": "Used for profile photo upload.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "associatedDomains": [
+        "applinks:spinvault.app"
+      ]
     },
     "android": {
+      "package": "com.spinvault.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#1a1a2e"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "spinvault",
+              "host": "auth",
+              "pathPrefix": "/callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,6 +61,11 @@
       "expo-secure-store",
       "expo-sqlite",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
   }
 }

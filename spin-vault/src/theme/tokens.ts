@@ -20,6 +20,7 @@ export const lightColors = {
     primary: '#1A1A1A',
     secondary: '#6B6860',
     tertiary: '#A09D95',
+    inverse: '#FFFFFF',
   },
   border: {
     default: '#E8E6E0',
@@ -53,6 +54,7 @@ export const darkColors = {
     primary: '#F0EFE8',
     secondary: '#9B9890',
     tertiary: '#6B6860',
+    inverse: '#FFFFFF',
   },
   border: {
     default: '#2E2E2E',

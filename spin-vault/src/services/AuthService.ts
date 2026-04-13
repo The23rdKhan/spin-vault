@@ -1,14 +1,27 @@
 /**
- * AuthService — App Boot Sequence
+ * AuthService — App Boot Sequence + OAuth Deep Link Handling
  *
- * Handles the critical path that runs every time the app opens:
- * 1. Check SecureStore for existing Supabase session
- * 2. If session exists and valid: restore it
- * 3. If no session: call supabase.auth.signInAnonymously()
- * 4. After auth: fetch wallet balance
+ * Boot sequence (called once on mount):
+ * 1. Set up Supabase auth state listener (syncs OAuth callbacks to sessionSlice)
+ * 2. Initialize session (SecureStore → anonymous sign-in fallback)
+ * 3. Fetch wallet balance
+ * 4. Load user settings
+ * 5. Check daily bonus eligibility
+ *
+ * OAuth callback flow:
+ *   User taps Google/Apple → browser opens OAuth page
+ *   → browser redirects to spinvault://auth/callback?code=XXXX
+ *   → _layout.tsx catches URL via Linking.addEventListener
+ *   → calls AuthService.handleOAuthCallback(url)
+ *   → exchangeCodeForSession() resolves the PKCE code
+ *   → onAuthStateChange fires → sessionSlice syncs automatically
  */
 
+import * as Linking from 'expo-linking';
+
+import { supabase } from '../lib/supabase';
 import { useSessionStore } from '../stores/sessionSlice';
+import { useUIStore } from '../stores/uiSlice';
 import { useWalletStore } from '../stores/walletSlice';
 import { useSettingsStore } from '../stores/settingsSlice';
 
@@ -17,12 +30,100 @@ export interface InitializeResult {
   error?: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth state listener
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _unsubscribeAuthListener: (() => void) | null = null;
+
 /**
- * Initialize the app boot sequence.
- * This should be called once on app mount.
+ * Subscribes to Supabase auth state changes and syncs them into sessionSlice.
+ * Handles OAuth SIGNED_IN events after exchangeCodeForSession completes,
+ * token refreshes, USER_UPDATED (e.g. linked email), and SIGNED_OUT.
  */
+function setupAuthStateListener(): void {
+  // Clean up any previous subscription
+  if (_unsubscribeAuthListener) {
+    _unsubscribeAuthListener();
+    _unsubscribeAuthListener = null;
+  }
+
+  const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    switch (event) {
+      case 'SIGNED_IN':
+      case 'TOKEN_REFRESHED':
+      case 'USER_UPDATED':
+        if (session) {
+          useSessionStore.setState({
+            supabaseSession: session,
+            user: session.user,
+            isAnonymous: session.user.is_anonymous ?? true,
+            linkedEmail: session.user.email ?? null,
+            authStatus: 'authenticated',
+            isLinking: false,
+          });
+        }
+        break;
+
+      case 'SIGNED_OUT':
+        useSessionStore.setState({
+          supabaseSession: null,
+          user: null,
+          userProfile: null,
+          authStatus: 'unauthenticated',
+          isAnonymous: true,
+          linkedEmail: null,
+        });
+        break;
+
+      default:
+        break;
+    }
+  });
+
+  _unsubscribeAuthListener = () => listener.subscription.unsubscribe();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OAuth callback handler
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Handles the deep link URL Supabase sends after OAuth completion.
+ * Called from _layout.tsx when Linking receives an incoming URL.
+ *
+ * URL format (PKCE): spinvault://auth/callback?code=XXXX
+ * After exchange, onAuthStateChange fires → sessionSlice syncs automatically.
+ */
+export async function handleOAuthCallback(url: string): Promise<void> {
+  const parsed = Linking.parse(url);
+
+  // Only process our auth callback path
+  if (parsed.path !== 'auth/callback') return;
+
+  const code = parsed.queryParams?.code;
+  if (typeof code !== 'string' || code === '') return;
+
+  try {
+    await supabase.auth.exchangeCodeForSession(url);
+    // onAuthStateChange fires SIGNED_IN → sessionSlice updated automatically.
+    // Show a toast so the user knows linking succeeded while they were in browser.
+    useUIStore.getState().showSuccess('Account linked successfully!');
+  } catch (err) {
+    console.warn('[AuthService] OAuth code exchange failed:', err);
+    useUIStore.getState().showError('Account linking failed. Please try again.');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Initialize
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function initialize(): Promise<InitializeResult> {
   try {
+    // Set up auth state listener before session init so we catch the first event
+    setupAuthStateListener();
+
     // Step 1: Initialize session (checks SecureStore, signs in anonymously if needed)
     await useSessionStore.getState().initialize();
 
@@ -46,11 +147,8 @@ export async function initialize(): Promise<InitializeResult> {
     await useWalletStore.getState().fetchBalance();
 
     const { error: walletError } = useWalletStore.getState();
-
     if (walletError !== null) {
-      // Non-fatal: user is authenticated but wallet fetch failed
-      // They can retry later
-      console.warn('Wallet fetch failed:', walletError);
+      console.warn('[AuthService] Wallet fetch failed:', walletError);
     }
 
     // Step 3: Load user settings
@@ -63,7 +161,6 @@ export async function initialize(): Promise<InitializeResult> {
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown initialization error';
 
-    // Rollback: reset stores to initial state
     useSessionStore.getState().reset();
     useWalletStore.getState().reset();
 
@@ -74,9 +171,10 @@ export async function initialize(): Promise<InitializeResult> {
   }
 }
 
-/**
- * Reset all app state (for sign out or error recovery).
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Reset
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function resetAppState(): void {
   useSessionStore.getState().reset();
   useWalletStore.getState().reset();
@@ -85,6 +183,7 @@ export function resetAppState(): void {
 
 export const AuthService = {
   initialize,
+  handleOAuthCallback,
   resetAppState,
 };
 

@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import type { Session as SupabaseSession, User } from '@supabase/supabase-js';
+import * as Linking from 'expo-linking';
 
 import { supabase } from '../lib/supabase';
 import type { Database } from '../types/database';
@@ -253,8 +254,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ isLinking: true, error: null });
 
     try {
+      const redirectTo = Linking.createURL('auth/callback');
       const { error } = await supabase.auth.linkIdentity({
         provider: 'google',
+        options: { redirectTo },
       });
 
       if (error) {
@@ -277,8 +280,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ isLinking: true, error: null });
 
     try {
+      const redirectTo = Linking.createURL('auth/callback');
       const { error } = await supabase.auth.linkIdentity({
         provider: 'apple',
+        options: { redirectTo },
       });
 
       if (error) {

@@ -1,21 +1,286 @@
-import { View, Text, StyleSheet } from 'react-native';
+/**
+ * Shop Screen
+ *
+ * Coin packages, Watch Ad row, and Daily Bonus shortcut.
+ * IAP and Ads are stubbed — fully wired UI, no-op on press until SDKs configured.
+ */
+
+import React from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../src/theme/useTheme';
+import { useWalletStore, DAILY_FREE_COINS } from '../../src/stores/walletSlice';
+import { useUIStore } from '../../src/stores/uiSlice';
+import { BalanceBar } from '../../src/components/game/BalanceBar';
+import { ScreenHeader } from '../../src/components/ScreenHeader';
+import { formatCoins } from '../../src/utils/formatCoins';
+import Icon from '../../src/components/Icon';
 
-export default function ShopScreen() {
-  const { colors, typography } = useTheme();
+// ─────────────────────────────────────────────────────────────────────────────
+// Coin packages
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface CoinPackage {
+  id: string;
+  coins: bigint;
+  label: string;
+  price: string;
+  tag: string | null;
+}
+
+const PACKAGES: CoinPackage[] = [
+  { id: 'pack_50k',   coins:       50_000n, label:  '50K', price:  '$0.99', tag: null },
+  { id: 'pack_150k',  coins:      150_000n, label: '150K', price:  '$1.99', tag: 'POPULAR' },
+  { id: 'pack_500k',  coins:      500_000n, label: '500K', price:  '$4.99', tag: null },
+  { id: 'pack_1200k', coins:    1_200_000n, label: '1.2M', price:  '$9.99', tag: 'BEST VALUE' },
+  { id: 'pack_3m',    coins:    3_000_000n, label:   '3M', price: '$19.99', tag: null },
+  { id: 'pack_75m',   coins:    7_500_000n, label: '7.5M', price: '$39.99', tag: null },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Package card
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PackageCard({ pkg, onPress }: { pkg: CoinPackage; onPress: () => void }) {
+  const { colors, spacing, radius, typography } = useTheme();
+  const isPopular = pkg.tag === 'POPULAR';
+  const isBestValue = pkg.tag === 'BEST VALUE';
+  const highlight = isPopular || isBestValue;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg.primary }]}>
-      <Text style={[typography.title, { color: colors.text.primary }]}>Shop</Text>
-    </View>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={[
+        styles.card,
+        {
+          backgroundColor: highlight ? colors.gold.light : colors.bg.card,
+          borderColor: highlight ? colors.gold.primary : colors.border.default,
+          borderRadius: radius.lg,
+          padding: spacing.md,
+        },
+      ]}
+    >
+      {/* Tag badge */}
+      {pkg.tag ? (
+        <View
+          style={[
+            styles.tagBadge,
+            {
+              backgroundColor: colors.gold.primary,
+              borderRadius: radius.sm,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 2,
+              marginBottom: spacing.sm,
+            },
+          ]}
+        >
+          <Text style={{ ...typography.label, color: colors.bg.machine, fontWeight: '700' }}>
+            {pkg.tag}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.tagPlaceholder} />
+      )}
+
+      {/* Coin icon */}
+      <Text style={styles.coinEmoji}>🪙</Text>
+
+      {/* Amount */}
+      <Text style={{ ...typography.title, color: colors.text.primary, fontWeight: '700', marginTop: 4 }}>
+        {pkg.label}
+      </Text>
+      <Text style={{ ...typography.caption, color: colors.text.tertiary }}>coins</Text>
+
+      {/* Price */}
+      <View
+        style={[
+          styles.priceButton,
+          {
+            backgroundColor: colors.gold.primary,
+            borderRadius: radius.md,
+            marginTop: spacing.sm,
+            paddingVertical: spacing.xs,
+            paddingHorizontal: spacing.md,
+          },
+        ]}
+      >
+        <Text style={{ ...typography.body, color: colors.bg.machine, fontWeight: '700' }}>
+          {pkg.price}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function ShopScreen() {
+  const { colors, spacing, radius, typography } = useTheme();
+
+  const canClaimDaily = useWalletStore((s) => s.canClaimDaily);
+  const showModal = useUIStore((s) => s.showModal);
+  const showInfo = useUIStore((s) => s.showInfo);
+
+  function handlePackagePress(_pkg: CoinPackage) {
+    showInfo('In-app purchases coming soon!');
+  }
+
+  function handleWatchAd() {
+    showInfo('Rewarded ads coming soon!');
+  }
+
+  return (
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg.primary }]} edges={['top']}>
+      <ScreenHeader title="Shop" subtitle="Get more coins" />
+      <BalanceBar />
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* ── Daily Bonus shortcut (when available) ── */}
+        {canClaimDaily && (
+          <TouchableOpacity
+            onPress={() => showModal('daily_bonus')}
+            activeOpacity={0.85}
+            style={[
+              styles.dailyRow,
+              {
+                marginHorizontal: spacing.lg,
+                marginTop: spacing.lg,
+                backgroundColor: colors.gold.light,
+                borderColor: colors.gold.primary,
+                borderRadius: radius.lg,
+                padding: spacing.md,
+              },
+            ]}
+          >
+            <Icon name="gift-outline" size={24} variant="gold" />
+            <View style={styles.dailyText}>
+              <Text style={{ ...typography.body, color: colors.gold.text, fontWeight: '600' }}>
+                Daily Bonus Available!
+              </Text>
+              <Text style={{ ...typography.caption, color: colors.gold.primary }}>
+                Claim {formatCoins(DAILY_FREE_COINS)} free coins
+              </Text>
+            </View>
+            <Icon name="chevron-forward-outline" size={18} variant="gold" />
+          </TouchableOpacity>
+        )}
+
+        {/* ── Watch Ad ── */}
+        <TouchableOpacity
+          onPress={handleWatchAd}
+          activeOpacity={0.85}
+          style={[
+            styles.adRow,
+            {
+              marginHorizontal: spacing.lg,
+              marginTop: spacing.lg,
+              backgroundColor: colors.bg.card,
+              borderColor: colors.border.default,
+              borderRadius: radius.lg,
+              padding: spacing.md,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.adIcon,
+              { backgroundColor: colors.semantic.info, borderRadius: radius.full },
+            ]}
+          >
+            <Icon name="play-outline" size={20} color={colors.text.inverse} />
+          </View>
+          <View style={styles.dailyText}>
+            <Text style={{ ...typography.body, color: colors.text.primary, fontWeight: '600' }}>
+              Watch an Ad
+            </Text>
+            <Text style={{ ...typography.caption, color: colors.text.tertiary }}>
+              Earn 10,000 free coins
+            </Text>
+          </View>
+          <Icon name="chevron-forward-outline" size={18} variant="muted" />
+        </TouchableOpacity>
+
+        {/* ── Packages section ── */}
+        <Text
+          style={[
+            styles.sectionLabel,
+            {
+              ...typography.label,
+              color: colors.text.tertiary,
+              paddingHorizontal: spacing.lg,
+              paddingTop: spacing.xl,
+              paddingBottom: spacing.sm,
+            },
+          ]}
+        >
+          COIN PACKAGES
+        </Text>
+
+        <View style={[styles.grid, { paddingHorizontal: spacing.lg, gap: spacing.sm }]}>
+          {PACKAGES.map((pkg) => (
+            <PackageCard key={pkg.id} pkg={pkg} onPress={() => handlePackagePress(pkg)} />
+          ))}
+        </View>
+
+        {/* Note */}
+        <Text
+          style={[
+            styles.note,
+            { ...typography.caption, color: colors.text.tertiary, paddingHorizontal: spacing.lg },
+          ]}
+        >
+          Spin Vault uses virtual coins for entertainment only. No real money or prizes involved.
+        </Text>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  safe: { flex: 1 },
+  dailyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    gap: 12,
+  },
+  dailyText: { flex: 1 },
+  adRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    gap: 12,
+  },
+  adIcon: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sectionLabel: { textTransform: 'uppercase', letterSpacing: 0.8 },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  card: {
+    width: '48%',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  tagBadge: { alignItems: 'center' },
+  tagPlaceholder: { height: 20 },
+  coinEmoji: { fontSize: 32 },
+  priceButton: { alignItems: 'center' },
+  note: {
+    textAlign: 'center',
+    marginTop: 20,
+    lineHeight: 18,
   },
 });

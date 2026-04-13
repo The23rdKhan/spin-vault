@@ -45,6 +45,8 @@ export interface ModalData {
   winAmount?: bigint;
   achievementType?: string;
   freeSpinsCount?: number;
+  level?: number;
+  bonusCoins?: bigint;
   errorMessage?: string;
   jackpotAmount?: bigint;
 }
