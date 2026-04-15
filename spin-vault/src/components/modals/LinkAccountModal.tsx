@@ -135,7 +135,7 @@ export function LinkAccountModal({ visible }: Props) {
         color: colors.text.primary,
         padding: spacing.md,
       },
-    ] as const;
+    ];
   }
 
   // ─────────────────────────────────────────────────────────────────────────
