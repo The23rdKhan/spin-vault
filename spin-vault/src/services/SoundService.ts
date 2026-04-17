@@ -7,12 +7,24 @@
  * NOTE: Actual .mp3 asset files are not bundled yet — each play call
  * is a no-op stub until assets are added. Wire-up is complete so adding
  * real assets only requires updating the SOUND_ASSETS map below.
+ *
+ * TEMPORARY: expo-audio imports disabled for old dev build compatibility
  */
 
-import { createAudioPlayer } from 'expo-audio';
-import type { AudioPlayer, AudioSource } from 'expo-audio';
+// import { createAudioPlayer } from 'expo-audio';
+// import type { AudioPlayer, AudioSource } from 'expo-audio';
 
 import { useSettingsStore } from '../stores/settingsSlice';
+
+// Stub types for old dev build compatibility
+type AudioPlayer = any;
+type AudioSource = any;
+const createAudioPlayer = (_source: AudioSource) => ({
+  volume: 0,
+  currentTime: 0,
+  play: () => {},
+  remove: () => {}
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Asset map — swap `null` for `require('../../assets/sounds/spin.mp3')` etc.
