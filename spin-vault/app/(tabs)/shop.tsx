@@ -16,8 +16,23 @@ import { BalanceBar } from '../../src/components/game/BalanceBar';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { formatCoins } from '../../src/utils/formatCoins';
 import Icon from '../../src/components/Icon';
-import { IAPManager, COIN_PACKAGES, type CoinPackage } from '../../src/lib/iap';
-import { AdService } from '../../src/services/AdService';
+// Temporarily disabled until dev build includes native modules
+// import { IAPManager, COIN_PACKAGES, type CoinPackage } from '../../src/lib/iap';
+// import { AdService } from '../../src/services/AdService';
+
+// Stub for old dev build compatibility
+const COIN_PACKAGES: any[] = [];
+const IAPManager = {
+  initialize: async () => {},
+  purchasePackage: async (_id: string) => {},
+  restorePurchases: async () => {}
+};
+const AdService = {
+  initialize: async () => {},
+  showRewardedAd: async () => false,
+  getRewardAmount: () => 25000
+};
+type CoinPackage = any;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Package card
