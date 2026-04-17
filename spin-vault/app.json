@@ -63,7 +63,19 @@
       "expo-router",
       "expo-secure-store",
       "expo-sqlite",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          },
+          "android": {
+            "minSdkVersion": 21
+          }
+        }
+      ],
+      "expo-audio"
     ],
     "extra": {
       "eas": {

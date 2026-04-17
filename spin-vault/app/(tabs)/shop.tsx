@@ -16,27 +16,8 @@ import { BalanceBar } from '../../src/components/game/BalanceBar';
 import { ScreenHeader } from '../../src/components/ScreenHeader';
 import { formatCoins } from '../../src/utils/formatCoins';
 import Icon from '../../src/components/Icon';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Coin packages
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface CoinPackage {
-  id: string;
-  coins: bigint;
-  label: string;
-  price: string;
-  tag: string | null;
-}
-
-const PACKAGES: CoinPackage[] = [
-  { id: 'pack_50k',   coins:       50_000n, label:  '50K', price:  '$0.99', tag: null },
-  { id: 'pack_150k',  coins:      150_000n, label: '150K', price:  '$1.99', tag: 'POPULAR' },
-  { id: 'pack_500k',  coins:      500_000n, label: '500K', price:  '$4.99', tag: null },
-  { id: 'pack_1200k', coins:    1_200_000n, label: '1.2M', price:  '$9.99', tag: 'BEST VALUE' },
-  { id: 'pack_3m',    coins:    3_000_000n, label:   '3M', price: '$19.99', tag: null },
-  { id: 'pack_75m',   coins:    7_500_000n, label: '7.5M', price: '$39.99', tag: null },
-];
+import { IAPManager, COIN_PACKAGES, type CoinPackage } from '../../src/lib/iap';
+import { AdService } from '../../src/services/AdService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Package card
@@ -124,13 +105,46 @@ export default function ShopScreen() {
   const canClaimDaily = useWalletStore((s) => s.canClaimDaily);
   const showModal = useUIStore((s) => s.showModal);
   const showInfo = useUIStore((s) => s.showInfo);
+  const showError = useUIStore((s) => s.showError);
 
-  function handlePackagePress(_pkg: CoinPackage) {
-    showInfo('In-app purchases coming soon!');
+  // Initialize IAP and Ads on mount
+  React.useEffect(() => {
+    IAPManager.initialize().catch((error) => {
+      console.error('Failed to initialize IAP:', error);
+      showError('Failed to load products. Please restart the app.');
+    });
+
+    AdService.initialize().catch((error) => {
+      console.error('Failed to initialize AdService:', error);
+      // Don't show error to user - ads are optional
+    });
+  }, [showError]);
+
+  async function handlePackagePress(pkg: CoinPackage) {
+    try {
+      await IAPManager.purchasePackage(pkg.id);
+    } catch (error) {
+      console.error('Purchase error:', error);
+      showError('Purchase failed. Please try again.');
+    }
   }
 
-  function handleWatchAd() {
-    showInfo('Rewarded ads coming soon!');
+  async function handleWatchAd() {
+    try {
+      await AdService.showRewardedAd();
+    } catch (error) {
+      console.error('Watch ad error:', error);
+      showError('Failed to show ad. Please try again.');
+    }
+  }
+
+  async function handleRestorePurchases() {
+    try {
+      await IAPManager.restorePurchases();
+    } catch (error) {
+      console.error('Restore error:', error);
+      showError('Failed to restore purchases.');
+    }
   }
 
   return (
@@ -199,7 +213,7 @@ export default function ShopScreen() {
               Watch an Ad
             </Text>
             <Text style={{ ...typography.caption, color: colors.text.tertiary }}>
-              Earn 10,000 free coins
+              Earn {formatCoins(BigInt(AdService.getRewardAmount()))} free coins
             </Text>
           </View>
           <Icon name="chevron-forward-outline" size={18} variant="muted" />
@@ -222,10 +236,20 @@ export default function ShopScreen() {
         </Text>
 
         <View style={[styles.grid, { paddingHorizontal: spacing.lg, gap: spacing.sm }]}>
-          {PACKAGES.map((pkg) => (
+          {COIN_PACKAGES.map((pkg) => (
             <PackageCard key={pkg.id} pkg={pkg} onPress={() => handlePackagePress(pkg)} />
           ))}
         </View>
+
+        {/* Restore Purchases */}
+        <TouchableOpacity
+          onPress={handleRestorePurchases}
+          style={[styles.restoreButton, { paddingHorizontal: spacing.lg, paddingVertical: spacing.md }]}
+        >
+          <Text style={{ ...typography.caption, color: colors.text.tertiary, textAlign: 'center' }}>
+            Restore Purchases
+          </Text>
+        </TouchableOpacity>
 
         {/* Note */}
         <Text
@@ -278,6 +302,10 @@ const styles = StyleSheet.create({
   tagPlaceholder: { height: 20 },
   coinEmoji: { fontSize: 32 },
   priceButton: { alignItems: 'center' },
+  restoreButton: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
   note: {
     textAlign: 'center',
     marginTop: 20,
