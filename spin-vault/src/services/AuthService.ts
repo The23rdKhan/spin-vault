@@ -4,9 +4,8 @@
  * Boot sequence (called once on mount):
  * 1. Set up Supabase auth state listener (syncs OAuth callbacks to sessionSlice)
  * 2. Initialize session (SecureStore → anonymous sign-in fallback)
- * 3. Fetch wallet balance
- * 4. Load user settings
- * 5. Check daily bonus eligibility
+ * 3. Fetch wallet balance & load user settings in parallel (⚡ optimized)
+ * 4. Check daily bonus eligibility
  *
  * OAuth callback flow:
  *   User taps Google/Apple → browser opens OAuth page
@@ -20,6 +19,7 @@
 import * as Linking from 'expo-linking';
 
 import { supabase } from '../lib/supabase';
+import { logger } from '../lib/logger';
 import { useSessionStore } from '../stores/sessionSlice';
 import { useUIStore } from '../stores/uiSlice';
 import { useWalletStore } from '../stores/walletSlice';
@@ -110,7 +110,7 @@ export async function handleOAuthCallback(url: string): Promise<void> {
     // Show a toast so the user knows linking succeeded while they were in browser.
     useUIStore.getState().showSuccess('Account linked successfully!');
   } catch (err) {
-    console.warn('[AuthService] OAuth code exchange failed:', err);
+    logger.warn('[AuthService] OAuth code exchange failed:', { error: err });
     useUIStore.getState().showError('Account linking failed. Please try again.');
   }
 }
@@ -120,16 +120,21 @@ export async function handleOAuthCallback(url: string): Promise<void> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function initialize(): Promise<InitializeResult> {
+  logger.debug('🔐 [AUTH] AuthService.initialize() started');
+
   try {
     // Set up auth state listener before session init so we catch the first event
+    logger.debug('👂 [AUTH] Setting up auth state listener...');
     setupAuthStateListener();
 
     // Step 1: Initialize session (checks SecureStore, signs in anonymously if needed)
+    logger.debug('👤 [AUTH] Step 1/4: Initializing session...');
     await useSessionStore.getState().initialize();
 
-    const { authStatus, error: sessionError } = useSessionStore.getState();
+    const { authStatus, error: sessionError, user } = useSessionStore.getState();
 
     if (authStatus === 'error') {
+      logger.error('❌ [AUTH] Session initialization failed', new Error(sessionError ?? 'Unknown error'));
       return {
         success: false,
         error: sessionError ?? 'Session initialization failed',
@@ -137,29 +142,46 @@ export async function initialize(): Promise<InitializeResult> {
     }
 
     if (authStatus !== 'authenticated') {
+      logger.error('❌ [AUTH] User not authenticated after initialization', new Error('Auth failed'));
       return {
         success: false,
         error: 'Failed to authenticate',
       };
     }
 
-    // Step 2: Fetch wallet balance (server is source of truth)
-    await useWalletStore.getState().fetchBalance();
+    logger.debug('✅ [AUTH] Session initialized, user authenticated');
 
-    const { error: walletError } = useWalletStore.getState();
-    if (walletError !== null) {
-      console.warn('[AuthService] Wallet fetch failed:', walletError);
+    // Set user context in Sentry/logger for error tracking
+    if (user !== null) {
+      logger.setUser(user.id, user.is_anonymous ?? true, user.email ?? undefined);
     }
 
-    // Step 3: Load user settings
-    await useSettingsStore.getState().loadSettings();
+    // Steps 2-3: Fetch wallet balance and load settings in parallel (no dependencies)
+    logger.debug('💰 [AUTH] Step 2-3/4: Fetching wallet balance & settings in parallel...');
+    await Promise.all([
+      useWalletStore.getState().fetchBalance(),
+      useSettingsStore.getState().loadSettings(),
+    ]);
+
+    const { error: walletError, balance } = useWalletStore.getState();
+    if (walletError !== null) {
+      logger.warn('⚠️  [AUTH] Wallet fetch failed:', { error: walletError });
+    } else {
+      logger.debug('✅ [AUTH] Wallet balance fetched:', { balance: balance.toString() });
+    }
+    logger.debug('✅ [AUTH] User settings loaded');
 
     // Step 4: Check daily bonus eligibility
+    logger.debug('🎁 [AUTH] Step 4/4: Checking daily bonus eligibility...');
     useWalletStore.getState().checkDailyBonusEligibility();
+    const { canClaimDaily } = useWalletStore.getState();
+    logger.debug('✅ [AUTH] Daily bonus check complete', { canClaimDaily });
 
+    logger.info('🎉 [AUTH] AuthService.initialize() completed successfully');
     return { success: true };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown initialization error';
+    logger.error('❌ [AUTH] Fatal error during initialization', err, { errorMessage });
 
     useSessionStore.getState().reset();
     useWalletStore.getState().reset();

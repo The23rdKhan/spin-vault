@@ -20,10 +20,7 @@
         "NSUserTrackingUsageDescription": "This identifier is used to measure ad performance and show relevant ads.",
         "NSCameraUsageDescription": "Used for profile photo upload.",
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "associatedDomains": [
-        "applinks:spinvault.app"
-      ]
+      }
     },
     "android": {
       "package": "com.spinvault.app",
@@ -61,6 +58,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-splash-screen",
       "expo-secure-store",
       "expo-sqlite",
       "expo-font",
@@ -75,7 +73,8 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

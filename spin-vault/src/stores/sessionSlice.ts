@@ -10,6 +10,7 @@ import type { Session as SupabaseSession, User } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 
 import { supabase } from '../lib/supabase';
+import { logger } from '../lib/logger';
 import type { Database } from '../types/database';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,16 +112,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // ───────────────────────────────────────────────────────────────────────────
 
   initialize: async () => {
+    console.log('👤 [SESSION] sessionSlice.initialize() started');
     set({ isInitializing: true, authStatus: 'loading' });
 
     try {
       // Check for existing session
+      console.log('🔍 [SESSION] Checking for existing Supabase session...');
       const {
         data: { session },
         error,
       } = await supabase.auth.getSession();
 
       if (error) {
+        console.error('❌ [SESSION] Error checking session:', error);
         throw error;
       }
 
@@ -128,6 +132,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         const user = session.user;
         const isAnonymous = user.is_anonymous ?? true;
         const linkedEmail = user.email ?? null;
+
+        console.log('✅ [SESSION] Found existing session');
+        console.log('   - User ID:', user.id);
+        console.log('   - Anonymous:', isAnonymous);
+        console.log('   - Email:', linkedEmail ?? 'none');
 
         set({
           supabaseSession: session,
@@ -139,12 +148,16 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         });
 
         // Fetch user profile and achievements
+        console.log('🏆 [SESSION] Fetching achievements...');
         await get().fetchAchievements();
+        console.log('✅ [SESSION] Achievements fetched');
       } else {
         // No session — sign in anonymously
+        console.log('ℹ️  [SESSION] No existing session found - signing in anonymously...');
         await get().signInAnonymously();
       }
     } catch (err) {
+      console.error('❌ [SESSION] Initialization failed:', err);
       set({
         authStatus: 'error',
         isInitializing: false,
@@ -188,16 +201,22 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   // ───────────────────────────────────────────────────────────────────────────
 
   signInAnonymously: async () => {
+    console.log('🎭 [SESSION] Starting anonymous sign-in...');
     set({ authStatus: 'loading', error: null });
 
     try {
       const { data, error } = await supabase.auth.signInAnonymously();
 
       if (error) {
+        console.error('❌ [SESSION] Anonymous sign-in failed:', error);
         throw error;
       }
 
-      if (data.session) {
+      if (data.session && data.user) {
+        console.log('✅ [SESSION] Anonymous sign-in successful');
+        console.log('   - User ID:', data.user.id);
+        console.log('   - Anonymous:', true);
+
         set({
           supabaseSession: data.session,
           user: data.user,
@@ -208,6 +227,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         });
       }
     } catch (err) {
+      console.error('❌ [SESSION] Anonymous sign-in error:', err);
       set({
         authStatus: 'error',
         isInitializing: false,
@@ -305,6 +325,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       await supabase.auth.signOut();
 
+      // Clear Sentry user context to prevent errors being attributed to wrong user
+      logger.clearUser();
+
       set({
         supabaseSession: null,
         user: null,
@@ -316,6 +339,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         unlockedAchievementTypes: new Set(),
       });
     } catch (err) {
+      logger.error('❌ [SESSION] Sign out failed', err);
       set({
         error: err instanceof Error ? err.message : 'Sign out failed',
       });
