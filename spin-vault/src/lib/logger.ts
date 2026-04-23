@@ -13,8 +13,6 @@
 
 import * as Sentry from '@sentry/react-native';
 
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
 interface LogContext {
   [key: string]: unknown;
 }
@@ -152,9 +150,14 @@ class Logger {
 
   /**
    * Add custom breadcrumb for debugging error context.
+   * Available in both dev and production for consistent debugging.
    */
   breadcrumb(message: string, category: string, data?: LogContext): void {
-    if (!__DEV__) {
+    if (__DEV__) {
+      // In dev, log breadcrumbs to console for visibility
+      console.log(`[BREADCRUMB] ${category}: ${message}`, data ?? '');
+    } else {
+      // In production, send to Sentry
       Sentry.addBreadcrumb({
         message,
         category,

@@ -125,6 +125,19 @@ export default function RootLayout() {
   const hasCompletedOnboarding = useUIStore((s) => s.hasCompletedOnboarding);
   const setOnboardingComplete = useUIStore((s) => s.setOnboardingComplete);
 
+  // Splash screen timeout fallback (30 seconds)
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (!isReady) {
+        logger.error('🚨 [BOOT] Initialization timeout - forcing splash hide', new Error('Init timeout'));
+        SplashScreen.hideAsync().catch(() => {});
+        setInitError('App initialization timed out. Please restart the app.');
+      }
+    }, 30000); // 30 second timeout
+
+    return () => clearTimeout(timeout);
+  }, [isReady]);
+
   useEffect(() => {
     // Deep link subscription stored so we can clean it up on unmount.
     // Registered AFTER initialize() to avoid handling a code before Supabase
@@ -133,23 +146,30 @@ export default function RootLayout() {
     let linkingSub: ReturnType<typeof Linking.addEventListener> | null = null;
 
     async function bootApp() {
+      const bootStartTime = performance.now();
       logger.debug('🚀 [BOOT] App startup begins');
+      logger.breadcrumb('Boot started', 'boot');
 
       // 1. Check persistent onboarding state before anything else
       try {
+        logger.breadcrumb('Checking onboarding status', 'boot');
         logger.debug('📱 [BOOT] Checking onboarding status...');
         const stored = await AsyncStorage.getItem(ONBOARDING_STORAGE_KEY);
         if (stored === 'true') {
           logger.debug('✅ [BOOT] Onboarding already completed');
           setOnboardingComplete();
+          logger.breadcrumb('Onboarding check complete', 'boot', { completed: true });
         } else {
           logger.debug('ℹ️  [BOOT] First time user - will show onboarding');
+          logger.breadcrumb('Onboarding check complete', 'boot', { completed: false });
         }
       } catch (error) {
         logger.warn('⚠️  [BOOT] Failed to read onboarding state:', { error });
+        logger.breadcrumb('Onboarding check failed', 'boot', { error: String(error) });
       }
 
       // 2. Initialize auth with retry logic (handles transient network failures)
+      logger.breadcrumb('Starting auth initialization', 'boot');
       logger.debug('🔐 [BOOT] Starting AuthService initialization...');
       let retries = 3;
       let lastError: string | null = null;
@@ -160,6 +180,7 @@ export default function RootLayout() {
 
         if (result.success) {
           logger.debug('✅ [BOOT] Auth initialization successful');
+          logger.breadcrumb('Auth initialization complete', 'boot', { success: true });
           initSuccess = true;
         } else {
           lastError = result.error ?? 'Unknown error';
@@ -172,18 +193,27 @@ export default function RootLayout() {
               attemptsRemaining: retries,
               backoffMs: backoffDelay,
             });
+            logger.breadcrumb('Auth initialization retry', 'boot', {
+              attempt: 4 - retries,
+              error: lastError,
+            });
             await new Promise((resolve) => setTimeout(resolve, backoffDelay));
           } else {
             logger.error(
               '❌ [BOOT] Auth initialization failed after retries',
               new Error(lastError)
             );
+            logger.breadcrumb('Auth initialization failed', 'boot', {
+              error: lastError,
+              retriesExhausted: true,
+            });
             setInitError(lastError);
           }
         }
       }
 
       // 3. Register the deep link listener now that auth is fully initialised
+      logger.breadcrumb('Registering deep link listener', 'boot');
       logger.debug('🔗 [BOOT] Registering deep link listener...');
       linkingSub = Linking.addEventListener('url', ({ url }) => {
         logger.debug('🔗 [BOOT] Deep link received:', { url });
@@ -194,14 +224,26 @@ export default function RootLayout() {
       try {
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl) {
+          // Sanitize URL to prevent OAuth codes in breadcrumbs
+          const sanitizedUrl = initialUrl.replace(/code=[^&]+/, 'code=[REDACTED]');
+          logger.breadcrumb('Processing initial deep link', 'boot', { url: sanitizedUrl });
           logger.debug('🔗 [BOOT] Processing initial deep link:', { initialUrl });
           await AuthService.handleOAuthCallback(initialUrl);
         }
       } catch (error) {
         logger.warn('⚠️  [BOOT] OAuth callback handling failed:', { error });
+        logger.breadcrumb('OAuth callback failed', 'boot', { error: String(error) });
       }
 
       logger.debug('✅ [BOOT] App boot complete - ready to render');
+
+      // Track boot performance
+      const bootDuration = performance.now() - bootStartTime;
+      logger.info(`⚡ [BOOT] Total boot time: ${bootDuration.toFixed(0)}ms`);
+      logger.breadcrumb('Boot completed', 'performance', {
+        durationMs: Math.round(bootDuration),
+      });
+
       setIsReady(true);
     }
 
@@ -290,6 +332,8 @@ export default function RootLayout() {
 // Catches React errors and prevents full app crashes. Required by Expo Router.
 
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  const [retryCount, setRetryCount] = useState(0);
+
   // Fallback colors if theme provider fails (prevents ErrorBoundary crash loop)
   const fallbackColors = {
     bg: { primary: '#1a1a2e' },
@@ -309,7 +353,16 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
   useEffect(() => {
     // Log error to Sentry
     logger.error('🚨 [ERROR BOUNDARY] Uncaught error in React tree', error);
+    // Reset retry counter when error changes (new error = fresh start)
+    setRetryCount(0);
   }, [error]);
+
+  const handleRetry = () => {
+    const newRetryCount = retryCount + 1;
+    setRetryCount(newRetryCount);
+    logger.breadcrumb('User retried after error', 'ui', { retryCount: newRetryCount });
+    retry();
+  };
 
   return (
     <View style={[styles.errorContainer, { backgroundColor: colors.bg.primary }]}>
@@ -326,10 +379,10 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
       )}
       <Pressable
         style={[styles.retryButton, { backgroundColor: colors.gold.primary }]}
-        onPress={retry}
+        onPress={handleRetry}
       >
         <Text style={[styles.retryButtonText, { color: colors.bg.primary }]}>
-          Try Again
+          Try Again {retryCount > 0 && `(${retryCount})`}
         </Text>
       </Pressable>
     </View>
