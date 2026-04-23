@@ -157,19 +157,34 @@ export async function initialize(): Promise<InitializeResult> {
     }
 
     // Steps 2-3: Fetch wallet balance and load settings in parallel (no dependencies)
+    // Use Promise.allSettled to allow partial failures (non-blocking)
     logger.debug('💰 [AUTH] Step 2-3/4: Fetching wallet balance & settings in parallel...');
-    await Promise.all([
+    const [walletResult, settingsResult] = await Promise.allSettled([
       useWalletStore.getState().fetchBalance(),
       useSettingsStore.getState().loadSettings(),
     ]);
 
-    const { error: walletError, balance } = useWalletStore.getState();
-    if (walletError !== null) {
-      logger.warn('⚠️  [AUTH] Wallet fetch failed:', { error: walletError });
+    // Log results but don't block initialization on failures
+    if (walletResult.status === 'rejected') {
+      logger.warn('⚠️  [AUTH] Wallet fetch failed (non-blocking):', {
+        error: walletResult.reason,
+      });
     } else {
-      logger.debug('✅ [AUTH] Wallet balance fetched:', { balance: balance.toString() });
+      const { error: walletError, balance } = useWalletStore.getState();
+      if (walletError !== null) {
+        logger.warn('⚠️  [AUTH] Wallet fetch failed:', { error: walletError });
+      } else {
+        logger.debug('✅ [AUTH] Wallet balance fetched:', { balance: balance.toString() });
+      }
     }
-    logger.debug('✅ [AUTH] User settings loaded');
+
+    if (settingsResult.status === 'rejected') {
+      logger.warn('⚠️  [AUTH] Settings load failed (non-blocking):', {
+        error: settingsResult.reason,
+      });
+    } else {
+      logger.debug('✅ [AUTH] User settings loaded');
+    }
 
     // Step 4: Check daily bonus eligibility
     logger.debug('🎁 [AUTH] Step 4/4: Checking daily bonus eligibility...');

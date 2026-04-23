@@ -36,12 +36,13 @@ if (!__DEV__) {
     Sentry.init({
       dsn: SENTRY_DSN,
       debug: false,
-      tracesSampleRate: 0.2, // 20% of transactions for performance monitoring
+      release: `spin-vault@${Constants.expoConfig?.version ?? '1.0.0'}`,
+      dist: Constants.expoConfig?.version ?? '1.0.0',
+      tracesSampleRate: 0.05, // 5% of transactions (prevents quota burnout)
       enableAutoSessionTracking: true,
       sessionTrackingIntervalMillis: 30000, // 30 seconds
       enableAppHangTracking: true,
       environment: __DEV__ ? 'development' : 'production',
-      dist: Constants.expoConfig?.version ?? '1.0.0',
 
       // Sanitize sensitive data before sending to Sentry
       beforeSend(event, hint) {
@@ -148,14 +149,38 @@ export default function RootLayout() {
         logger.warn('⚠️  [BOOT] Failed to read onboarding state:', { error });
       }
 
-      // 2. Initialize auth (sets up onAuthStateChange listener + session restore)
+      // 2. Initialize auth with retry logic (handles transient network failures)
       logger.debug('🔐 [BOOT] Starting AuthService initialization...');
-      const result = await AuthService.initialize();
-      if (!result.success) {
-        logger.error('❌ [BOOT] Auth initialization failed:', new Error(result.error ?? 'Unknown error'));
-        setInitError(result.error ?? 'Initialization failed');
-      } else {
-        logger.debug('✅ [BOOT] Auth initialization successful');
+      let retries = 3;
+      let lastError: string | null = null;
+      let initSuccess = false;
+
+      while (retries > 0 && !initSuccess) {
+        const result = await AuthService.initialize();
+
+        if (result.success) {
+          logger.debug('✅ [BOOT] Auth initialization successful');
+          initSuccess = true;
+        } else {
+          lastError = result.error ?? 'Unknown error';
+          retries--;
+
+          if (retries > 0) {
+            const backoffDelay = (4 - retries) * 1000; // 1s, 2s, 3s
+            logger.warn('⚠️  [BOOT] Init failed, retrying...', {
+              error: lastError,
+              attemptsRemaining: retries,
+              backoffMs: backoffDelay,
+            });
+            await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+          } else {
+            logger.error(
+              '❌ [BOOT] Auth initialization failed after retries',
+              new Error(lastError)
+            );
+            setInitError(lastError);
+          }
+        }
       }
 
       // 3. Register the deep link listener now that auth is fully initialised

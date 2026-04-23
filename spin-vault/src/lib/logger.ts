@@ -20,6 +20,11 @@ interface LogContext {
 }
 
 class Logger {
+  // Error rate limiting to prevent quota burnout
+  private errorCounts = new Map<string, { count: number; lastSeen: number }>();
+  private readonly ERROR_THRESHOLD = 10; // Max 10 of same error per minute
+  private readonly THROTTLE_WINDOW = 60000; // 1 minute
+
   /**
    * Debug logs — stripped in production.
    * Use for verbose boot sequences, state changes, etc.
@@ -60,18 +65,65 @@ class Logger {
   /**
    * Error logs — always logged + sent to Sentry.
    * Use for exceptions, critical failures.
+   * Includes rate limiting to prevent quota burnout from error loops.
    */
   error(message: string, error?: Error | unknown, context?: LogContext): void {
     console.error(message, error ?? '', context ?? '');
 
-    // Send errors to Sentry in production
+    // Send errors to Sentry in production with rate limiting
     if (!__DEV__) {
-      Sentry.captureException(error instanceof Error ? error : new Error(message), {
-        extra: {
+      // Rate limiting: prevent same error from flooding Sentry
+      const errorKey = message + (error instanceof Error ? error.message : String(error));
+      const now = Date.now();
+      const existing = this.errorCounts.get(errorKey);
+
+      if (existing) {
+        if (now - existing.lastSeen < this.THROTTLE_WINDOW) {
+          existing.count++;
+          if (existing.count > this.ERROR_THRESHOLD) {
+            // Throttled - don't send to Sentry, just log locally
+            console.warn(
+              `⚠️  Error throttled (${existing.count}/${this.ERROR_THRESHOLD}):`,
+              message
+            );
+            return;
+          }
+        } else {
+          // Reset counter after throttle window
+          existing.count = 1;
+          existing.lastSeen = now;
+        }
+      } else {
+        this.errorCounts.set(errorKey, { count: 1, lastSeen: now });
+      }
+
+      // Filter out known noisy errors (send as breadcrumbs instead)
+      const noisyPatterns = [
+        /network request failed/i,
+        /timeout/i,
+        /cancelled/i,
+        /aborted/i,
+      ];
+
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isNoisy = noisyPatterns.some((pattern) => pattern.test(errorMessage));
+
+      if (isNoisy) {
+        // Send as breadcrumb instead of full event (saves quota)
+        Sentry.addBreadcrumb({
           message,
-          ...context,
-        },
-      });
+          level: 'error',
+          data: { error: errorMessage, ...context },
+        });
+      } else {
+        // Send full error event
+        Sentry.captureException(error instanceof Error ? error : new Error(message), {
+          extra: {
+            message,
+            ...context,
+          },
+        });
+      }
     }
   }
 
