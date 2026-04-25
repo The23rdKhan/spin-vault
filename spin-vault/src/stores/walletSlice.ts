@@ -125,6 +125,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   // ───────────────────────────────────────────────────────────────────────────
 
   fetchBalance: async () => {
+    console.log('💰 [WALLET] Fetching balance from server...');
     set({ isLoading: true, error: null });
 
     try {
@@ -133,10 +134,12 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       } = await supabase.auth.getUser();
 
       if (!user) {
+        console.error('❌ [WALLET] No authenticated user found');
         set({ isLoading: false, error: 'Not authenticated' });
         return;
       }
 
+      console.log('🔍 [WALLET] Querying wallet for user:', user.id);
       const { data, error } = await supabase
         .from('wallets')
         .select('balance')
@@ -144,17 +147,21 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         .single();
 
       if (error) {
+        console.error('❌ [WALLET] Database query failed:', error);
         set({ isLoading: false, error: error.message });
         return;
       }
 
       const serverBalance = BigInt(data.balance);
+      console.log('✅ [WALLET] Balance fetched:', serverBalance.toString(), 'coins');
+
       set({
         balance: serverBalance,
         previousBalance: serverBalance,
         isLoading: false,
       });
     } catch (err) {
+      console.error('❌ [WALLET] Fetch balance error:', err);
       set({
         isLoading: false,
         error: err instanceof Error ? err.message : 'Failed to fetch balance',
